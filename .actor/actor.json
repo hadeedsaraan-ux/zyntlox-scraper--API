@@ -9,5 +9,7 @@
   },
   "dockerfile": "Dockerfile",
   "minMemoryMbytes": 1024,
-  "startUrl": "https://apify.com"
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
 }
