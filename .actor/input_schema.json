@@ -1,0 +1,23 @@
+{
+  "title": "Zyntlox Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "url": {
+      "title": "Target URL",
+      "type": "string",
+      "description": "The webpage URL you want to scrape and convert to AI-ready Markdown.",
+      "editor": "textfield",
+      "example": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+      "prefill": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+      "nullable": false
+    },
+    "includeScreenshot": {
+      "title": "Include Screenshot",
+      "type": "boolean",
+      "description": "Check this if you want a clean, popup-free full screenshot in base64 format.",
+      "default": false
+    }
+  },
+  "required": ["url"]
+}
