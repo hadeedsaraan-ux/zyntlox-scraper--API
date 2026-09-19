@@ -11,8 +11,8 @@ puppeteer.use(stealth);
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 800;
-const NAV_TIMEOUT_MS = 30000;
-const SETTLE_TIMEOUT_MS = 2500;
+const NAV_TIMEOUT_MS = 45000;
+const SETTLE_TIMEOUT_MS = 5000;
 const SCROLL_MAX_MS = 6000;
 const SCROLL_MAX_PX = 35000;
 const SCROLL_HARD_LIMIT_MS = 10000;
@@ -152,12 +152,14 @@ Actor.main(async () => {
 
     console.log(`Zyntlox Actor starting extraction for: ${url}`);
 
-    // Robust Proxy Handling
+    // Smart Apify Proxy Configuration
     let proxyServer = null;
     let proxyAuth = null;
 
     try {
-        const proxyConfiguration = await Actor.createProxyConfiguration();
+        const proxyConfiguration = await Actor.createProxyConfiguration({
+            groups: ['AUTO']
+        });
         if (proxyConfiguration) {
             const rawProxyUrl = await proxyConfiguration.newUrl();
             if (rawProxyUrl) {
@@ -172,7 +174,7 @@ Actor.main(async () => {
             }
         }
     } catch (e) {
-        console.log('Proxy setup skipped, using direct connection');
+        console.log('Proxy configuration set to direct fallback.');
     }
 
     let browser = null;
@@ -188,7 +190,6 @@ Actor.main(async () => {
             '--window-size=1280,800'
         ];
 
-        // Safe proxy argument (WITHOUT credentials in the flag)
         if (proxyServer) {
             launchArgs.push(`--proxy-server=${proxyServer}`);
         }
@@ -206,7 +207,6 @@ Actor.main(async () => {
         const page = await browser.newPage();
         await page.setViewport({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-        // Authenticate proxy on the page safely if credentials exist
         if (proxyAuth) {
             await page.authenticate(proxyAuth);
         }
@@ -217,7 +217,7 @@ Actor.main(async () => {
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
         });
 
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
 
         await page
             .goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS })
@@ -225,15 +225,26 @@ Actor.main(async () => {
                 navWarning = `Navigation did not complete cleanly: ${err.message}`;
             });
 
+        // Cloudflare / Anti-bot Challenge Detection
+        const isChallenge = await page.evaluate(() => {
+            const t = (document.title || '').toLowerCase();
+            return t.includes('just a moment') || t.includes('attention required') || t.includes('cloudflare') || t === 'g2.com';
+        });
+
+        if (isChallenge) {
+            console.log('Challenge detected. Giving browser 12s to settle and bypass...');
+            await new Promise((resolve) => setTimeout(resolve, 12000));
+        }
+
         if (page.url() === 'about:blank') {
             throw new Error(`Could not load ${url}. ${navWarning || 'The page never navigated.'}`);
         }
 
-        await page.waitForNetworkIdle({ idleTime: 500, timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+        await page.waitForNetworkIdle({ idleTime: 1000, timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
 
         await autoScroll(page);
         await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Kill Banners & Overlays
         await page.evaluate(() => {
@@ -342,6 +353,7 @@ Actor.main(async () => {
             ...(screenshotBase64 && { screenshot: screenshotBase64 })
         };
 
+        // Push data to Apify dataset
         await Actor.pushData(resultPayload);
         console.log('Zyntlox Actor successfully finished and pushed results!');
 
