@@ -1,0 +1,14 @@
+{
+  "actorOutputSchemaVersion": 1,
+  "title": "Zyntlox Scraper Output",
+  "description": "Clean Markdown and extracted metadata for AI pipelines",
+  "type": "object",
+  "properties": {
+    "dataset": {
+      "type": "string",
+      "title": "Extracted Data Dataset",
+      "description": "Dataset containing the clean markdown, metadata, links, and screenshots.",
+      "template": "https://api.apify.com/v2/datasets/{{defaultDatasetId}}/items?format=json"
+    }
+  }
+}
