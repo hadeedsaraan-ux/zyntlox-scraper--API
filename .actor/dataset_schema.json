@@ -1,0 +1,36 @@
+{
+  "actorSpecification": 1,
+  "fields": {
+    "success": {
+      "type": "boolean",
+      "label": "Success Status"
+    },
+    "source_url": {
+      "type": "string",
+      "label": "Source URL"
+    },
+    "metadata": {
+      "type": "object",
+      "label": "Extracted Metadata"
+    },
+    "markdown": {
+      "type": "string",
+      "label": "Clean Markdown"
+    },
+    "screenshot": {
+      "type": "string",
+      "label": "Base64 Screenshot"
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": ["source_url", "markdown", "metadata"]
+      },
+      "display": {
+        "component": "table"
+      }
+    }
+  }
+}
