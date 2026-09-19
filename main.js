@@ -4,7 +4,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 
-// Stealth setup
+// Stealth plugin setup
 const stealth = StealthPlugin();
 stealth.enabledEvasions.delete('chrome.runtime');
 puppeteer.use(stealth);
@@ -175,22 +175,19 @@ Actor.main(async () => {
             launchArgs.push(`--proxy-server=${proxyUrl}`);
         }
 
-        // Fix: Use Apify pre-installed Chrome executable path
-        const chromePath = process.env.PUPPETEER_EXECUTABLE_PATH 
-            || process.env.APIFY_CHROME_EXECUTABLE_PATH 
-            || '/usr/bin/google-chrome-stable' 
-            || '/usr/bin/chromium';
+        // Apify container Chrome path resolution
+        const executablePath = process.env.APIFY_CHROME_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
 
         browser = await puppeteer.launch({
             headless: 'new',
-            executablePath: chromePath,
+            executablePath: executablePath,
             args: launchArgs,
         });
 
         const page = await browser.newPage();
         await page.setViewport({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-        // Human-like behavior spoofing
+        // Anti-detection behavior
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
