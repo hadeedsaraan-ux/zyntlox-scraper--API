@@ -1,15 +1,17 @@
 {
-  "name": "zyntlox-scraper-api",
+  "name": "zyntlox-ai-scraper-apify",
   "version": "1.0.0",
-  "description": "Standalone Scraper and Screenshot API for Zyntlox",
-  "main": "api/scrape.js",
+  "description": "AI-Ready Web Scraper Actor for Apify & MCP",
+  "main": "main.js",
   "scripts": {
-    "start": "node api/scrape.js"
+    "start": "node main.js"
   },
   "dependencies": {
-    "@sparticuz/chromium": "141.0.0",
-    "puppeteer-core": "24.0.0",
+    "apify": "^3.7.2",
     "cheerio": "^1.0.0-rc.12",
+    "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "turndown": "^7.1.3"
   }
 }
