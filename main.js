@@ -1,5 +1,4 @@
 const { Actor } = require('apify');
-const { launchPuppeteer } = require('crawlee');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cheerio = require('cheerio');
@@ -154,32 +153,40 @@ Actor.main(async () => {
     console.log(`Zyntlox Actor starting extraction for: ${url}`);
 
     const proxyConfiguration = await Actor.createProxyConfiguration();
+    let proxyUrl = undefined;
+    if (proxyConfiguration) {
+        proxyUrl = await proxyConfiguration.newUrl();
+    }
 
     let browser = null;
     let navWarning = null;
 
     try {
-        // Native Apify / Crawlee launch (auto-finds Chrome inside Docker without paths)
-        browser = await launchPuppeteer({
-            proxyUrl: proxyConfiguration ? await proxyConfiguration.newUrl() : undefined,
-            launcher: puppeteer,
-            launchOptions: {
-                headless: 'new',
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-infobars',
-                    '--disable-blink-features=AutomationControlled',
-                    '--window-size=1280,800'
-                ]
-            }
+        const launchArgs = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-infobars',
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1280,800'
+        ];
+
+        if (proxyUrl) {
+            launchArgs.push(`--proxy-server=${proxyUrl}`);
+        }
+
+        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.APIFY_CHROME_EXECUTABLE_PATH || '/usr/bin/google-chrome';
+
+        browser = await puppeteer.launch({
+            headless: 'new',
+            executablePath: executablePath,
+            args: launchArgs,
         });
 
         const page = await browser.newPage();
         await page.setViewport({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-        // Anti-detection behavior
+        // Human-like evasions
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -258,7 +265,8 @@ Actor.main(async () => {
             title: $('title').first().text().trim() || '',
             description: $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '',
             has_viewport: $('meta[name="viewport"]').length > 0,
-            has_canonical: $('link[rel="canonical"]').attr('href') || '',
+            has_canonical: $('link[rel="canonical"]').length > 0,
+            canonical_url: $('link[rel="canonical"]').attr('href') || '',
             robots: robots,
             is_noindex: /\bnoindex\b/i.test(robots),
             lang: $('html').attr('lang') || '',
