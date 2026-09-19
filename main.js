@@ -11,7 +11,7 @@ puppeteer.use(stealth);
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 800;
-const NAV_TIMEOUT_MS = 25000;
+const NAV_TIMEOUT_MS = 30000;
 const SETTLE_TIMEOUT_MS = 2500;
 const SCROLL_MAX_MS = 6000;
 const SCROLL_MAX_PX = 35000;
@@ -152,10 +152,27 @@ Actor.main(async () => {
 
     console.log(`Zyntlox Actor starting extraction for: ${url}`);
 
-    const proxyConfiguration = await Actor.createProxyConfiguration();
-    let proxyUrl = undefined;
-    if (proxyConfiguration) {
-        proxyUrl = await proxyConfiguration.newUrl();
+    // Robust Proxy Handling
+    let proxyServer = null;
+    let proxyAuth = null;
+
+    try {
+        const proxyConfiguration = await Actor.createProxyConfiguration();
+        if (proxyConfiguration) {
+            const rawProxyUrl = await proxyConfiguration.newUrl();
+            if (rawProxyUrl) {
+                const parsed = new URL(rawProxyUrl);
+                proxyServer = `${parsed.protocol}//${parsed.host}`;
+                if (parsed.username && parsed.password) {
+                    proxyAuth = {
+                        username: decodeURIComponent(parsed.username),
+                        password: decodeURIComponent(parsed.password)
+                    };
+                }
+            }
+        }
+    } catch (e) {
+        console.log('Proxy setup skipped, using direct connection');
     }
 
     let browser = null;
@@ -171,11 +188,14 @@ Actor.main(async () => {
             '--window-size=1280,800'
         ];
 
-        if (proxyUrl) {
-            launchArgs.push(`--proxy-server=${proxyUrl}`);
+        // Safe proxy argument (WITHOUT credentials in the flag)
+        if (proxyServer) {
+            launchArgs.push(`--proxy-server=${proxyServer}`);
         }
 
-        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.APIFY_CHROME_EXECUTABLE_PATH || '/usr/bin/google-chrome';
+        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH 
+            || process.env.APIFY_CHROME_EXECUTABLE_PATH 
+            || '/usr/bin/google-chrome';
 
         browser = await puppeteer.launch({
             headless: 'new',
@@ -186,7 +206,12 @@ Actor.main(async () => {
         const page = await browser.newPage();
         await page.setViewport({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-        // Human-like evasions
+        // Authenticate proxy on the page safely if credentials exist
+        if (proxyAuth) {
+            await page.authenticate(proxyAuth);
+        }
+
+        // Anti-detection behavior
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
