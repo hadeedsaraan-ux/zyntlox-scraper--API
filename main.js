@@ -11,8 +11,8 @@ puppeteer.use(stealth);
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 800;
-const NAV_TIMEOUT_MS = 45000;
-const SETTLE_TIMEOUT_MS = 5000;
+const NAV_TIMEOUT_MS = 35000;
+const SETTLE_TIMEOUT_MS = 3000;
 const SCROLL_MAX_MS = 6000;
 const SCROLL_MAX_PX = 35000;
 const SCROLL_HARD_LIMIT_MS = 10000;
@@ -152,14 +152,12 @@ Actor.main(async () => {
 
     console.log(`Zyntlox Actor starting extraction for: ${url}`);
 
-    // Smart Apify Proxy Configuration
+    // Automatic Proxy Configuration (uses user's configured Apify proxy settings)
     let proxyServer = null;
     let proxyAuth = null;
 
     try {
-        const proxyConfiguration = await Actor.createProxyConfiguration({
-            groups: ['AUTO']
-        });
+        const proxyConfiguration = await Actor.createProxyConfiguration();
         if (proxyConfiguration) {
             const rawProxyUrl = await proxyConfiguration.newUrl();
             if (rawProxyUrl) {
@@ -174,7 +172,7 @@ Actor.main(async () => {
             }
         }
     } catch (e) {
-        console.log('Proxy configuration set to direct fallback.');
+        console.log('Using direct connection (No proxy).');
     }
 
     let browser = null;
@@ -211,7 +209,7 @@ Actor.main(async () => {
             await page.authenticate(proxyAuth);
         }
 
-        // Anti-detection behavior
+        // Anti-detection headers & variables
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -222,31 +220,47 @@ Actor.main(async () => {
         await page
             .goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS })
             .catch((err) => {
-                navWarning = `Navigation did not complete cleanly: ${err.message}`;
+                navWarning = `Navigation warning: ${err.message}`;
             });
 
-        // Cloudflare / Anti-bot Challenge Detection
-        const isChallenge = await page.evaluate(() => {
-            const t = (document.title || '').toLowerCase();
-            return t.includes('just a moment') || t.includes('attention required') || t.includes('cloudflare') || t === 'g2.com';
+        // 🛡️ FAIL EARLY (CREDIT SAVER): Check if page is blocked by anti-bot
+        const isBlocked = await page.evaluate(() => {
+            const title = (document.title || '').toLowerCase();
+            const text = (document.body ? document.body.innerText : '').toLowerCase();
+            return title.includes('just a moment') 
+                || title.includes('attention required') 
+                || title.includes('access denied') 
+                || title.includes('security check')
+                || text.includes('verify you are a human')
+                || text.includes('enable cookies to continue')
+                || text.includes('please complete the security check');
         });
 
-        if (isChallenge) {
-            console.log('Challenge detected. Giving browser 12s to settle and bypass...');
-            await new Promise((resolve) => setTimeout(resolve, 12000));
+        if (isBlocked) {
+            console.log('🚨 Anti-bot block detected! Terminating early to save user compute credits.');
+            await browser.close();
+            
+            // Push clear warning dataset so user doesn't burn compute
+            await Actor.pushData({
+                success: false,
+                source_url: url,
+                error: 'ANTI_BOT_BLOCKED',
+                message: 'Target website requires Apify Residential Proxies to bypass anti-bot shields (e.g. Cloudflare, PerimeterX). Please configure Residential Proxies in Actor settings.'
+            });
+            return;
         }
 
         if (page.url() === 'about:blank') {
             throw new Error(`Could not load ${url}. ${navWarning || 'The page never navigated.'}`);
         }
 
-        await page.waitForNetworkIdle({ idleTime: 1000, timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
 
         await autoScroll(page);
         await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
-        // Kill Banners & Overlays
+        // Kill Overlays & Banners
         await page.evaluate(() => {
             const EXACT_SELECTOR = '#onetrust-consent-sdk, #CybotCookiebotDialog, .cc-window, .osano-cm-window';
             const KEYWORD_SELECTOR = '[class*="cookie" i], [id*="cookie" i], [class*="consent" i], [id*="consent" i], [class*="gdpr" i], [id*="gdpr" i], [aria-label*="cookie" i]';
@@ -292,44 +306,16 @@ Actor.main(async () => {
         const rawHtml = await page.content();
         const $ = cheerio.load(rawHtml);
 
-        const robots = [
-            $('meta[name="robots"]').attr('content') || '',
-            $('meta[name="googlebot"]').attr('content') || '',
-        ].filter(Boolean).join(', ');
-
         const metadata = {
             title: $('title').first().text().trim() || '',
             description: $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '',
             has_viewport: $('meta[name="viewport"]').length > 0,
             has_canonical: $('link[rel="canonical"]').length > 0,
             canonical_url: $('link[rel="canonical"]').attr('href') || '',
-            robots: robots,
-            is_noindex: /\bnoindex\b/i.test(robots),
-            lang: $('html').attr('lang') || '',
             h1_count: $('h1').length,
             total_images: $('img').length,
             is_https: url.startsWith('https'),
         };
-
-        let hasNewsSchema = false;
-        let hasProductSchema = false;
-        let structuredAddress = null;
-
-        $('script[type="application/ld+json"]').each((_, el) => {
-            try {
-                const text = $(el).text();
-                if (!text) return;
-                const json = JSON.parse(text);
-                const str = JSON.stringify(json).toLowerCase();
-                if (str.includes('newsarticle')) hasNewsSchema = true;
-                if (str.includes('"product"') || str.includes('"offer"')) hasProductSchema = true;
-            } catch {}
-        });
-
-        const hasCommerceButtons = $('button, a').toArray().some(el => {
-            const text = $(el).text().toLowerCase();
-            return /\b(add to (cart|bag)|buy (now|it)|checkout)\b/i.test(text);
-        });
 
         $('script, style, iframe, noscript').remove();
         $('svg').replaceWith('<span>[SVG Icon]</span>');
@@ -348,17 +334,15 @@ Actor.main(async () => {
             metadata: metadata,
             images: domFacts.images,
             links: domFacts.links,
-            commerceSignals: { hasProductSchema, hasNewsSchema, hasCommerceButtons },
             warning: navWarning,
             ...(screenshotBase64 && { screenshot: screenshotBase64 })
         };
 
-        // Push data to Apify dataset
         await Actor.pushData(resultPayload);
-        console.log('Zyntlox Actor successfully finished and pushed results!');
+        console.log('Zyntlox Actor finished and pushed results!');
 
     } catch (error) {
         if (browser) await browser.close();
-        throw new Error(`Scraping failed: ${error.message}`);
+        throw new Error(`Scraping error: ${error.message}`);
     }
 });
