@@ -1,0 +1,13 @@
+{
+  "actorSpecification": 1,
+  "name": "zyntlox-ai-rag-scraper",
+  "title": "Zyntlox AI & RAG Markdown Scraper",
+  "description": "Convert any website into token-optimized Markdown with popup-free screenshots for LLMs and AI agents.",
+  "version": "1.0.0",
+  "meta": {
+    "instanceType": "regular"
+  },
+  "dockerfile": "Dockerfile",
+  "minMemoryMbytes": 1024,
+  "startUrl": "https://apify.com"
+}
