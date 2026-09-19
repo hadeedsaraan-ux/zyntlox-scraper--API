@@ -4,7 +4,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 
-// Stealth plugin setup to prevent bot detection
+// Stealth setup
 const stealth = StealthPlugin();
 stealth.enabledEvasions.delete('chrome.runtime');
 puppeteer.use(stealth);
@@ -143,7 +143,6 @@ async function extractDomFacts(page) {
 }
 
 Actor.main(async () => {
-    // 1. Get Input from Apify UI
     const input = await Actor.getInput();
     const { url, includeScreenshot = false, maxHeight = 0 } = input || {};
 
@@ -153,7 +152,6 @@ Actor.main(async () => {
 
     console.log(`Zyntlox Actor starting extraction for: ${url}`);
 
-    // 2. Apify Automatic Smart Proxy Configuration
     const proxyConfiguration = await Actor.createProxyConfiguration();
     let proxyUrl = undefined;
     if (proxyConfiguration) {
@@ -177,15 +175,22 @@ Actor.main(async () => {
             launchArgs.push(`--proxy-server=${proxyUrl}`);
         }
 
+        // Fix: Use Apify pre-installed Chrome executable path
+        const chromePath = process.env.PUPPETEER_EXECUTABLE_PATH 
+            || process.env.APIFY_CHROME_EXECUTABLE_PATH 
+            || '/usr/bin/google-chrome-stable' 
+            || '/usr/bin/chromium';
+
         browser = await puppeteer.launch({
             headless: 'new',
+            executablePath: chromePath,
             args: launchArgs,
         });
 
         const page = await browser.newPage();
         await page.setViewport({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-        // Human-like evasions
+        // Human-like behavior spoofing
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -209,6 +214,7 @@ Actor.main(async () => {
         await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
         await new Promise((resolve) => setTimeout(resolve, 300));
 
+        // Kill Banners & Overlays
         await page.evaluate(() => {
             const EXACT_SELECTOR = '#onetrust-consent-sdk, #CybotCookiebotDialog, .cc-window, .osano-cm-window';
             const KEYWORD_SELECTOR = '[class*="cookie" i], [id*="cookie" i], [class*="consent" i], [id*="consent" i], [class*="gdpr" i], [id*="gdpr" i], [aria-label*="cookie" i]';
@@ -227,7 +233,6 @@ Actor.main(async () => {
         }).catch(() => {});
 
         let screenshotBase64 = null;
-        // Conditional Screenshot (Only generated if requested to protect memory/tokens)
         if (includeScreenshot === true || includeScreenshot === 'true') {
             const screenshotOptions = { encoding: 'base64', type: 'png' };
             const numMaxHeight = Math.max(0, Number(maxHeight) || 0);
@@ -262,7 +267,7 @@ Actor.main(async () => {
 
         const metadata = {
             title: $('title').first().text().trim() || '',
-            description: $('meta[name="description"]').attr('content') || $('metaproperty="og:description"]').attr('content') || '',
+            description: $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '',
             has_viewport: $('meta[name="viewport"]').length > 0,
             has_canonical: $('link[rel="canonical"]').length > 0,
             canonical_url: $('link[rel="canonical"]').attr('href') || '',
@@ -304,7 +309,6 @@ Actor.main(async () => {
         await browser.close();
         browser = null;
 
-        // Final payload structure
         const resultPayload = {
             success: true,
             source_url: url,
@@ -317,7 +321,6 @@ Actor.main(async () => {
             ...(screenshotBase64 && { screenshot: screenshotBase64 })
         };
 
-        // Push data to Apify dataset
         await Actor.pushData(resultPayload);
         console.log('Zyntlox Actor successfully finished and pushed results!');
 
