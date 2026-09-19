@@ -1,9 +1,11 @@
 FROM apify/actor-node-puppeteer-chrome:20
 
-COPY package*.json ./
+COPY package.json ./
 
-RUN npm --quiet set progress=false \
-    && npm install --omit=dev
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+
+RUN npm install --omit=dev
 
 COPY . ./
 
